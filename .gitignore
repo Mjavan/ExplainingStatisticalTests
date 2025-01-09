@@ -16,7 +16,6 @@ notebooks/
 *.ipynb
 
 # Ignore specific files
-*.py
 *.sh
 mask_img.npy
 slurm-1022730.out
