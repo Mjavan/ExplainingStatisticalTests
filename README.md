@@ -29,7 +29,7 @@ This method can be applied to various contexts, such as identifying the samples 
    ```bash
    git clone https://github.com/Mjavan/ExplainingStatisticalTest.git
     
-   cd DeepTwoSampleTest-GradCAM
+   cd ExplainingStatisticalTests
    ```
     
 2- **Install dependencies**:
