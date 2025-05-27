@@ -13,7 +13,7 @@ slurm_files/
 images/
 notebooks/
 # Ignore all Jupyter notebooks
-#*.ipynb
+
 
 # Ignore specific files
 *.sh
