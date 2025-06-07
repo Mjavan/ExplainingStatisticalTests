@@ -13,7 +13,7 @@ slurm_files/
 images/
 notebooks/
 # Ignore all Jupyter notebooks
-*.ipynb
+
 
 # Ignore specific files
 *.sh
@@ -34,3 +34,4 @@ tru_mask.npy
 
 
 
+adni-notebook.ipynb
