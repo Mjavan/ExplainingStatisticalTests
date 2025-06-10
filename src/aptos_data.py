@@ -19,7 +19,7 @@ import cv2
 from skimage.draw import circle_perimeter
 
 with open('config.json', 'r') as config_file:
-        config = json.load(config_file)
+    config = json.load(config_file)
 
 
 class APTOS(Dataset):
@@ -33,33 +33,34 @@ class APTOS(Dataset):
     tfs (callable, optional): Transformations to be applied to the images.
     split_seed: seed for reproducibility.
     """
-    def __init__(self, base_path,train_size,split,tfs,split_seed):
-        self.train_path = os.path.join(base_path,'Aptos','cropped_train')
+
+    def __init__(self, base_path, train_size, split, tfs, split_seed):
+        self.train_path = os.path.join(base_path, 'Aptos', 'cropped_train')
         self.total_list = os.listdir(self.train_path)
         self.tfs = tfs
         rng = np.random.RandomState(split_seed)
         N = len(self.total_list)
         perm = rng.permutation(N)
         m = int(N * train_size)
-        if split=='train':
+        if split == 'train':
             self.img_list = [self.total_list[i] for i in perm[:m]]
-        elif split=='val':
+        elif split == 'val':
             self.img_list = [self.total_list[i] for i in perm[m:]]
         else:
             raise ValueError("Invalid split: choose 'train' or 'val'")
-        
+
     def __len__(self) -> int:
         return len(self.img_list)
-        
+
     def _load_item(self, idx: int) -> Image.Image:
         img_idx = self.img_list[idx]
-        img_path= os.path.join(self.train_path, img_idx)
+        img_path = os.path.join(self.train_path, img_idx)
         try:
             return Image.open(img_path)
         except (FileNotFoundError, UnidentifiedImageError) as e:
             print(f"Error loading image {img_idx}: {e}")
             return None
-             
+
     def __getitem__(self, idx: int) -> Tuple[Image.Image, Image.Image]:
         img = self._load_item(idx)
         if img is None:
@@ -67,17 +68,17 @@ class APTOS(Dataset):
         if self.tfs:
             img1 = self.tfs(img)
             img2 = self.tfs(img)
-        return img1,img2 
+        return img1, img2
 
-    
-def get_tfs(size= 224, setting="none"):
+
+def get_tfs(size=224, setting="none"):
     """Getting transformations for pretraining"""
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
     if setting == "none":
         tfms = transforms.Compose(
             [
-                transforms.Resize(size=(size,size)),
+                transforms.Resize(size=(size, size)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=mean, std=std),
             ]
@@ -93,10 +94,12 @@ def get_tfs(size= 224, setting="none"):
         gaussian_blur = 0.5
         kernel_size = 0.1
         hf_prob = 0.5
-        color_jitter = transforms.ColorJitter(cj_bright, cj_contrast, cj_sat, cj_hue)
+        color_jitter = transforms.ColorJitter(
+            cj_bright, cj_contrast, cj_sat, cj_hue)
         tfms = transforms.Compose(
             [
-                transforms.RandomResizedCrop(size=size, scale=(min_scale, 1.0)),
+                transforms.RandomResizedCrop(
+                    size=size, scale=(min_scale, 1.0)),
                 transforms.RandomHorizontalFlip(p=hf_prob),
                 transforms.RandomApply([color_jitter], p=cj_prob),
                 transforms.RandomGrayscale(p=random_gray_scale),
@@ -104,12 +107,12 @@ def get_tfs(size= 224, setting="none"):
                 transforms.Normalize(mean=mean, std=std),
             ]
         )
-        
+
     elif setting == 'contig':
-        
+
         tfms = transforms.Compose(
             [
-                transforms.Resize(size=(size,size)),
+                transforms.Resize(size=(size, size)),
                 transforms.RandomRotation(degrees=20),
                 transforms.RandomHorizontalFlip(p=0.5),
                 transforms.ToTensor(),
@@ -118,60 +121,62 @@ def get_tfs(size= 224, setting="none"):
         )
     return tfms
 
+
 def get_aptos_loader(
-    base_path,
-    size,
-    split_seed=42,
-    batch_size=64,
-    num_workers=6, 
-    train_size=0.8,
-    val_size=0.2,
-    aug='none'):  
-    
+        base_path,
+        size,
+        split_seed=42,
+        batch_size=64,
+        num_workers=6,
+        train_size=0.8,
+        val_size=0.2,
+        aug='none'):
+
     assert 0 < train_size <= 1, "train_size must be in range (0, 1]"
     assert train_size + val_size <= 1, "train_size + val_size must be <= 1"
-    
+
     loaders = []
     if val_size:
         for split in ['train', 'val']:
-            if split=='train':
-                tfs_dl = get_tfs(size=size, setting = aug)
+            if split == 'train':
+                tfs_dl = get_tfs(size=size, setting=aug)
             else:
-                tfs_dl = get_tfs(size=size, setting = 'none')                
+                tfs_dl = get_tfs(size=size, setting='none')
             D = APTOS(
                 base_path,
                 train_size,
                 split=split,
-                tfs = tfs_dl,
+                tfs=tfs_dl,
                 split_seed=split_seed)
-            
+
             loader = DataLoader(
-            D,
-            batch_size=batch_size,
-            shuffle=split == "train",
-            num_workers=num_workers,
-            pin_memory=True,
-        )
+                D,
+                batch_size=batch_size,
+                shuffle=split == "train",
+                num_workers=num_workers,
+                pin_memory=True,
+            )
             loaders.append(loader)
     else:
-        tfms = get_tfs(size=size, setting = aug)
+        tfms = get_tfs(size=size, setting=aug)
         D = APTOS(
-                base_path,
-                train_size,
-                split='train',
-                tfs = tfms,
-                split_seed=split_seed)
-        
+            base_path,
+            train_size,
+            split='train',
+            tfs=tfms,
+            split_seed=split_seed)
+
         loader = DataLoader(
             D,
             batch_size=batch_size,
-            shuffle= True,
+            shuffle=True,
             num_workers=num_workers,
             pin_memory=True,
         )
         loaders.append(loader)
     return loaders
-        
+
+
 def crop_to_circle(image_path):
     """Detect circles to eliminate redundant corners"""
     image = cv2.imread(image_path)
@@ -194,7 +199,7 @@ def crop_to_circle(image_path):
     if circles is None:
         flag = False
         return Image.open(image_path)
-    
+
     circles = np.round(circles[0, :]).astype("int")
     x, y, r = circles[0]
     h, w = gray.shape
@@ -221,13 +226,16 @@ def process_image(file_path, save_path):
         if img_path.lower().endswith(('.png')):
             cropped_img, proc = crop_to_circle(img_path)
             if not proc:
-                save_file_path = os.path.join(save_path, f"failed_{os.path.basename(file_path)}")
+                save_file_path = os.path.join(
+                    save_path, f"failed_{os.path.basename(file_path)}")
             else:
-                save_file_path = os.path.join(save_path, f"cropped_{os.path.basename(file_path)}")
+                save_file_path = os.path.join(
+                    save_path, f"cropped_{os.path.basename(file_path)}")
             cropped_img.save(save_file_path)
-            return None         
+            return None
     except Exception as e:
         return file_path
+
 
 def crop_all_images(path, save_path, num_workers=10):
     """
@@ -237,6 +245,6 @@ def crop_all_images(path, save_path, num_workers=10):
 
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-        
-    Parallel(n_jobs=num_workers)(delayed(process_image)(img_path, save_path) for img_path in path_list)
 
+    Parallel(n_jobs=num_workers)(delayed(process_image)(
+        img_path, save_path) for img_path in path_list)

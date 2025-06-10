@@ -1,10 +1,9 @@
 {
-    "base_path": "/dhc/home/masoumeh.javanbakhat/netstore-old/Baysian/3D/Explainability/Retina_Codes",
+    "base_path": "/sc/home/arman.beykmohammadi/coldstore",
     "random_state": 42,
     "size": 224,
-    "sample_size": { 
-        "healthy_size": 200,
-        "unhealthy_size": 200
+    "sample_size": {
+        "healthy_size": 9316,
+        "unhealthy_size": 9316
     }
-    
 }
