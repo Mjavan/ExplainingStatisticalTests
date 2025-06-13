@@ -24,7 +24,7 @@ This method can be applied to various contexts, such as identifying the samples 
 - **overlay.py**: is used to overlay heatmpas obtained from vis2samtestdr.py on images.
 - **utils.py**: containes utility functions for visualisation.
 
-## Data Access
+## Data access
 We pretrain a SimCLR model on the **train split** of the [APTOS 2019 Blindness Detection](https://www.kaggle.com/c/aptos2019-blindness-detection/data) dataset, which can be downloaded from Kaggle.
 Each image is preprocessed by cropping to the circular region and resizing to **448×448** pixels.
 
