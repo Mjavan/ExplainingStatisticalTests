@@ -15,7 +15,7 @@ This method can be applied to various contexts, such as identifying the samples 
 - **simclr.py**: script to train a self-supervised learning based on simcler to obtain embeddings.
 - **models.py**: script including the models used in simclr model.
 - **data.py**: script that defines groups of Diabetic Rethinopathy (here we defined two groups healthy and unhealthy group).
-- **aptos_data.py**: script that prepares Aptos data for pretarining using simclr.
+- **aptos_data.py**: script that prepares Aptos data for pretraining using simclr.
 - **embeddingtest.py**: script which can be used to see if two groups are statistically different or not.
 - **sampleimpr.py**: assings an influence score to each sample.
 - **samexclude.py**: exclude samples with highest influence score and measure the p-value.
