@@ -52,11 +52,12 @@ class TestStatisticBackprop:
         self.heatmap_dir = os.path.join(self.root_dir, "heatmaps")
         self.embed_dir = os.path.join(self.root_dir, "embeddings")
         self.param_dir = os.path.join(self.root_dir, "params")
-        # self._save_param()
+        self._save_param()
         self._load_test_set()
 
     def _save_param(self):
         args_dict = vars(self.args)
+        os.makedirs(self.param_dir, exist_ok=True)
         param_path = os.path.join(self.param_dir, f"{self.args.exp}")
         with open(f"{param_path}_params.json", "w") as f:
             json.dump(args_dict, f, indent=4)
@@ -99,68 +100,60 @@ class TestStatisticBackprop:
         self.encoder.eval()
         return self.encoder
 
-    def _get_mean_embeddings(self, gcam, dataloader):
-        """Takes dataloader of each group, extract embedding vectors, return mean embeddings"""
-        # Initialize accumulators for healthy and unhealthy groups
-        sum_f = torch.zeros_like(torch.zeros(self.args.latent_dim)).to(self.device)
-        count_f = 0  # Count of samples in each group
+    def _get_mean_and_activations(self, gcam, dataloader):
+        """
+        Performs a full forward pass, returning the mean embedding and a list of
+        live activation tensors (with graph history) for each batch.
+        """
+        all_activations = []
+        sum_f = torch.zeros(self.args.latent_dim, device=self.device)
+        count_f = 0
+
         for images, _ in dataloader:
             images = images.to(self.device)
-            embeddings = gcam.forward(images)
+            gcam.image_size = images.size(-1)
+            embeddings = gcam.model(images)
+
+            # *** FIX: Retrieve and store the live activation tensor for this batch ***
+            # This tensor is still connected to the computation graph.
+            batch_activations = gcam.get_captured_activations()
+            all_activations.append(batch_activations)
+
             embeddings = embeddings.view(embeddings.size()[0], -1)
-            sum_f += embeddings.sum(dim=0)  # Sum of embeddings for this batch
-            count_f += embeddings.size(0)
+            sum_f += embeddings.sum(dim=0)
+            count_f += images.size(0)
+
         mean_embed = sum_f / count_f if count_f > 0 else torch.zeros_like(sum_f)
-        del sum_f
-        torch.cuda.empty_cache()
-        return mean_embed
+        return mean_embed, all_activations
 
-    def calculate_test_statistics(self, model):
-        """Calculate the test statistic for different groups of DR."""
-        if self.args.model in ["simclr", "bsimclr"]:
-            target_layer = "0." + self.args.target_layer
-        else:
-            target_layer = self.args.target_layer
-        # Instantiate GradCAM for feature attribution
-        gcam = GradCAM(model, target_layer=target_layer, relu=self.args.relu, device=self.device)
-        # Calculate mean embeddings
-        healthy_mean = self._get_mean_embeddings(gcam, self.healthy_loader)
-        unhealthy_mean = self._get_mean_embeddings(gcam, self.unhealthy_loader)
-        D = healthy_mean - unhealthy_mean
-        print(f"healthy_mean:{healthy_mean.shape}")
-        print(f"unhealthy_mean:{unhealthy_mean.shape}")
-        test_statistic = torch.norm(D, p=2)
-        return (test_statistic, D, gcam)
-
-    def process_attributions(self, dataloader, gcam, backprop_value):
+    def process_attributions_per_batch(self, gcam, backprop_value, activations_list):
         """Process and return GradCAM attributions in batches."""
-        attributions_list = []
-        embed_list = []  # save embeddings as numpy array
-        # Compute attribution maps for each group group
-        for images, _ in dataloader:
-            images = images.to(self.device)
-            embeddings = gcam.forward(images)
-            embeddings = embeddings.view(embeddings.size()[0], -1).cpu().data.numpy()
-            embed_list.append(embeddings)
-            del embeddings
-            gcam.backward(backprop_value)
-            attributions = gcam.generate()
-            attributions = attributions.squeeze().cpu().data.numpy()
-            attributions_list.append(attributions)
-        return np.vstack(attributions_list), np.vstack(embed_list)
+        all_attributions = []
+        # image_size = self.config["img_size"]  # Get image size from config
 
-    def save_embeddings(self, embed_X, embed_Y):
-        n, m = self.sample_size.get("healthy_size", 100), self.sample_size.get("unhealthy_size", 100)
-        file_path = os.path.join(self.embed_dir, f"{self.seed}_{self.args.pre_exp}_{self.args.model}_{n+m}")
-        os.makedirs(file_path, exist_ok=True)
+        for batch_activations in activations_list:
+            # *** FIX: Use autograd.grad to get the gradient for this specific batch ***
+            # We must retain the graph because we are calling this in a loop.
+            batch_grads = torch.autograd.grad(outputs=backprop_value, inputs=batch_activations, retain_graph=True)[0]
 
-        path_X = os.path.join(file_path, "healthy_embed.npy")
-        path_Y = os.path.join(file_path, "unhealthy_embed.npy")
+            # Now we have the matched pair: (batch_activations, batch_grads)
+            attributions = gcam.generate_from_tensors(batch_activations, batch_grads)
+            all_attributions.append(attributions.detach().cpu().numpy())
 
-        if not os.path.exists(path_X) or not os.path.exists(path_Y):
-            np.save(path_X, embed_X)
-            np.save(path_Y, embed_Y)
-            print("embeddings were saved")
+        return np.vstack(all_attributions), None
+
+    # def save_embeddings(self, embed_X, embed_Y):
+    #     n, m = self.sample_size.get("healthy_size", 100), self.sample_size.get("unhealthy_size", 100)
+    #     file_path = os.path.join(self.embed_dir, f"{self.seed}_{self.args.pre_exp}_{self.args.model}_{n+m}")
+    #     os.makedirs(file_path, exist_ok=True)
+
+    #     path_X = os.path.join(file_path, "healthy_embed.npy")
+    #     path_Y = os.path.join(file_path, "unhealthy_embed.npy")
+
+    #     if not os.path.exists(path_X) or not os.path.exists(path_Y):
+    #         np.save(path_X, embed_X)
+    #         np.save(path_Y, embed_Y)
+    #         print("embeddings were saved")
 
     def save_attributions(self, att_g1, att_g2, latent_dim_idx=None):
         """Save the generated attributions to file."""
@@ -182,12 +175,24 @@ class TestStatisticBackprop:
     def run(self, backprop_type="test_statistic", latent_dim_idx=None):
         """Main experiment function."""
         model = self._load_model()
-        test_statistic, D, gcam = self.calculate_test_statistics(model)
-        print(f"test_statistic: {test_statistic:0.4f}\n")
 
-        # Determine which value to backpropagate (test-statistic or specific latent dimension)
+        # Simplified GradCAM object, now just a hook manager and generator
+        if self.args.model in ["simclr", "bsimclr"]:
+            target_layer = "0." + self.args.target_layer
+        else:
+            target_layer = self.args.target_layer
+        gcam = GradCAM(model, target_layer=target_layer, relu=self.args.relu, device=self.device)
+
+        # --- 1. Single Forward Pass to build the graph and get activations ---
+        model.zero_grad()
+        healthy_mean, healthy_activations = self._get_mean_and_activations(gcam, self.healthy_loader)
+        unhealthy_mean, unhealthy_activations = self._get_mean_and_activations(gcam, self.unhealthy_loader)
+
+        D = healthy_mean - unhealthy_mean
+
+        # Determine the scalar value to backpropagate from
         if backprop_type == "test_statistic":
-            backprop_value = test_statistic
+            backprop_value = torch.norm(D, p=2)
         elif backprop_type == "latent_dim":
             if latent_dim_idx is None or latent_dim_idx >= self.args.latent_dim:
                 raise ValueError(f"Invalid latent dimension index: {latent_dim_idx}")
@@ -195,13 +200,17 @@ class TestStatisticBackprop:
         else:
             raise ValueError("Invalid backpropagation type. Choose 'test_statistic' or 'latent_dim'.")
 
-        attr_healthy, embed_X = self.process_attributions(self.healthy_loader, gcam, backprop_value)
-        attr_unhealthy, embed_Y = self.process_attributions(self.unhealthy_loader, gcam, backprop_value)
+        print(f"test_statistic: {backprop_value.item():0.4f}\n")
+
+        # --- 2. Process Attributions with per-batch gradients ---
+
+        attr_healthy, embed_X = self.process_attributions_per_batch(gcam, backprop_value, healthy_activations)
+        attr_unhealthy, embed_Y = self.process_attributions_per_batch(gcam, backprop_value, unhealthy_activations)
 
         self.save_attributions(attr_healthy, attr_unhealthy, latent_dim_idx)
 
-        if self.args.save_embed:
-            self.save_embeddings(embed_X, embed_Y)
+        # if self.args.save_embed:
+        #     self.save_embeddings(embed_X, embed_Y)
 
 
 parser = argparse.ArgumentParser(description="Visualizing Two-Sample Test Retina")
