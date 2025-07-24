@@ -79,7 +79,8 @@ def stratified_sampledataset(dataset: DiabeticRetinopathy, healthy_size: int, un
         
 
 class SampledDiabeticRetinopathy(Dataset):
-    def __init__(self, dataframe: pd.DataFrame, base_path: str, tfs: Optional[callable] = None):
+    def __init__(self, dataframe: pd.DataFrame, base_path: str,
+                  tfs: Optional[callable] = None):
         self.dataframe = dataframe.reset_index(drop=True)        
         self.base_path = base_path
         self.tfs = tfs
