@@ -4,6 +4,7 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 from torchvision import transforms
 
+
 import numpy as np
 import pandas as pd
 import os
@@ -11,7 +12,7 @@ from PIL import Image
 
 import json
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 with open('config.json', 'r') as config_file:
         config = json.load(config_file)
@@ -50,13 +51,19 @@ class DiabeticRetinopathy(Dataset):
             img = self.tfs(img)
         return img, label
     
-def stratified_sampledataset(dataset: DiabeticRetinopathy, healthy_size: int, unhealthy_size: int, rnd_st: int = 42) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def stratified_sampledataset(dataset: DiabeticRetinopathy,
+                            healthy_size: int, 
+                            unhealthy_size: int,
+                            groups: Optional[List[int]] = None, 
+                            rnd_st: int = 42) -> Tuple[pd.DataFrame, pd.DataFrame]:
     # Separate healthy samples (class 0)
     healthy_samples = dataset.labels[dataset.labels['level'] == 0]
     healthy_sampled = healthy_samples.sample(n=healthy_size, random_state=rnd_st).reset_index(drop=True)
     
-    # Separate unhealthy samples (classes 1-4)
-    unhealthy_samples = dataset.labels[dataset.labels['level'].isin([1, 2, 3, 4])]
+    # Separate unhealthy samples (classes either: 1-4 or one or more specific classes of 1,2,3,4)
+    unhealthy_samples = dataset.labels[dataset.labels['level'].isin(groups)]
+    unhealthy_labels = unhealthy_samples['level'].unique()
+    print(f"Unhealthy labels: {unhealthy_labels}")
     
     # Determine total counts for stratified sampling
     total_unhealthy = unhealthy_samples['level'].value_counts()
@@ -109,7 +116,7 @@ def get_tfms(size: int = 224, interpolation = Image.BILINEAR) -> transforms.Comp
     return trsf
 
 
-def get_groups(config: dict = config) -> Tuple[SampledDiabeticRetinopathy, SampledDiabeticRetinopathy]:
+def get_groups(config: dict = config, groups: Optional[List] = None) -> Tuple[SampledDiabeticRetinopathy, SampledDiabeticRetinopathy]:
     """
     Groups from diabetic retinopathy healthy(class=0) and unhealthy(class=1..4).
 
@@ -124,12 +131,29 @@ def get_groups(config: dict = config) -> Tuple[SampledDiabeticRetinopathy, Sampl
     size = config['size']
     
     full_dataset = DiabeticRetinopathy(base_path=base_path, tfs=get_tfms(size=size))
-    healthy, unhealthy = stratified_sampledataset(full_dataset, healthy_size, unhealthy_size, rnd_st=random_state)
+    healthy, unhealthy = stratified_sampledataset(full_dataset, 
+                                                  healthy_size, 
+                                                  unhealthy_size, 
+                                                  groups=groups,
+                                                  rnd_st=random_state)
     
     healthy_ds = SampledDiabeticRetinopathy(healthy, base_path=base_path, tfs=get_tfms())
     unhealthy_ds = SampledDiabeticRetinopathy(unhealthy, base_path=base_path, tfs=get_tfms())
     
     return(healthy_ds,unhealthy_ds)
+
+# check if the script is run directly
+if __name__ == "__main__":
+    # Example usage
+    healthy_ds, unhealthy_ds = get_groups(groups=[2])
+    print(f"Healthy dataset size: {len(healthy_ds)}")
+    print(f"Unhealthy dataset size: {len(unhealthy_ds)}")
+    
+    # Create DataLoader for healthy dataset
+    healthy_loader = DataLoader(healthy_ds, batch_size=32, shuffle=True)
+    for images, labels in healthy_loader:
+        print(images.shape, labels.shape)
+        break
     
     
     
