@@ -1,5 +1,5 @@
 {
-    "base_path": "/dhc/home/masoumeh.javanbakhat/netstore-old/Baysian/3D/Explainability/Retina_Codes",
+    "base_path": "/sc/home/masoumeh.javanbakhat/netstore-old/Baysian/3D/Explainability/Retina_Codes",
     "random_state": 42,
     "size": 224,
     "sample_size": { 

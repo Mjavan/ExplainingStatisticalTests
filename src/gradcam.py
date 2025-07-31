@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
 
-from attention import SpatialAttention, ChannelAttention
+#from attention import SpatialAttention, ChannelAttention
 
 class ProbBase(object):
     def __init__(self, model, target_layer, relu, device, attention=None):
@@ -88,10 +88,10 @@ class GradCAM(ProbBase):
         self.activation = self.get_conv_outputs(self.outputs_forward, self.target_layer)
         #print(f'\nShape and type activateions A_k:{self.activation.shape},{self.activation.dtype}')
         # let's see if attention helps rfinement 
-        if self.attention:
+        #if self.attention:
             #print('attention was applied')
-            attention_weights = self.attention(self.activation)
-            self.activation = self.activation * attention_weights
+        #    attention_weights = self.attention(self.activation)
+        #    self.activation = self.activation * attention_weights
         
         self.activation = self.activation[None, :, :, :, :]
         self.alpha = self.alpha[:, None, :, :, :]
