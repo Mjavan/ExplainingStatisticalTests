@@ -20,6 +20,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 from data import get_groups
 from gradcam import GradCAM
 from models import SimCLR
+from embeddingtest import MMDTest
 
     
 class TestStatisticBackprop:
@@ -62,7 +63,7 @@ class TestStatisticBackprop:
 
     def _load_test_set(self):
         """Load test dataset."""
-        healthy_gr, unhealthy_gr = get_groups(self.config)
+        healthy_gr, unhealthy_gr = get_groups(self.config, list(self.args.groups))
         self.healthy_loader = DataLoader(healthy_gr, batch_size=self.args.bs, shuffle=False, drop_last=True)
         self.unhealthy_loader = DataLoader(unhealthy_gr, batch_size=self.args.bs, shuffle=False, drop_last=True)
         print(f'len healthy: {len(self.healthy_loader.dataset)}, num_batches:{len(self.healthy_loader)}')
@@ -127,6 +128,11 @@ class TestStatisticBackprop:
         D = healthy_mean - unhealthy_mean
         print(f'healthy_mean:{healthy_mean.shape}')
         print(f'unhealthy_mean:{unhealthy_mean.shape}')
+        healthy_mean_np = healthy_mean.detach().cpu().numpy()
+        unhealthy_mean_np = unhealthy_mean.detach().cpu().numpy()
+        mmd_nr = MMDTest(healthy_mean_np, unhealthy_mean_np)
+        p_val = mmd_nr._compute_p_value()
+        print(f'MMD p-value: {p_val:0.5f}')
         test_statistic = torch.norm(D, p=2)
         return(test_statistic, D, gcam)
     
@@ -204,7 +210,7 @@ class TestStatisticBackprop:
 parser = argparse.ArgumentParser(description='Visualizing Two-Sample Test Retina')
 # Model parameters
 parser.add_argument('--model', type=str, default='simclr', choices=('simclr','bsimclr','imgnet'))
-parser.add_argument('--exp', type=int, default=7)
+parser.add_argument('--exp', type=int, default=103)
 parser.add_argument('--pre_exp', type=int, default=2, help='The experiment id for pretraining.')
 parser.add_argument('--bs', type=int, default=16)  
 # Model parameters
@@ -213,6 +219,8 @@ parser.add_argument('--target_layer', type=str, default='7.2.conv3', choices=('7
 parser.add_argument('--backprop_type', type=str, default='test_statistic', choices= ('test_statistic','latent_dim'))
 parser.add_argument('--latent_dim_idx', type=int, default=None)
 parser.add_argument('--save_embed', type=bool, default=True)
+parser.add_argument('--groups', nargs='+', type=int, default=[1], choices=[1,2,3,4], help='List of group names')
+
 # Heatmap visualizations
 parser.add_argument('--relu', type=bool, default=True, help='If we apply relu on heatmaps in GradCAM!')               
 args = parser.parse_args()
