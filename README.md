@@ -9,7 +9,7 @@ To identify the samples driving the differences between the two groups, we propo
 
 To visualize the features that differentiate the two groups, we employ a gradient-based method. By backpropagating the statistical test signal to the input, we highlight the specific pixels responsible for the differences.
 
-This method can be applied to various contexts, such as identifying the samples and features that distinguish groups of medical images—e.g., one group with a genetic mutation and another without.
+This method can be applied to various contexts, such as identifying the samples and features that distinguish groups of medical images—e.g., one group with a genetic mutation and another without, revealing insights into the pathology of diseases.
 
 ## Project structure
 - **simclr.py**: script to train a self-supervised learning based on simcler to obtain embeddings.
