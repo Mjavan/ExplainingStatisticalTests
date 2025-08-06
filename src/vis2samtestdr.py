@@ -88,6 +88,7 @@ class TestStatisticBackprop:
                 # Attempt to load a pretrained model with imagenet
                 self.encoder = torch.nn.Sequential(*list(backbone.children())[:-1]).to(self.device)
             elif self.args.model in ['simclr','bsimclr']:
+                # Load SimCLR or BSimCLR model
                 model = SimCLR(backbone,hid_dim=2048,out_dim=128).to(self.device)
                 state_dict = self._load_checkpoint()
                 model.load_state_dict(state_dict['model'])
@@ -131,9 +132,10 @@ class TestStatisticBackprop:
         healthy_mean_np = healthy_mean.detach().cpu().numpy()
         unhealthy_mean_np = unhealthy_mean.detach().cpu().numpy()
         mmd_nr = MMDTest(healthy_mean_np, unhealthy_mean_np)
-        p_val = mmd_nr._compute_p_value()
-        print(f'MMD p-value: {p_val:0.5f}')
+        #p_val = mmd_nr._compute_p_value()
+        #print(f'MMD p-value: {p_val:0.5f}')
         test_statistic = torch.norm(D, p=2)
+        print(f'MMD test-statistic: {test_statistic:0.5f}')
         return(test_statistic, D, gcam)
     
     def process_attributions(self, dataloader, gcam, backprop_value):
@@ -141,7 +143,9 @@ class TestStatisticBackprop:
         attributions_list = []
         embed_list = [] # save embeddings as numpy array
         # Compute attribution maps for each group group
+        bs_idx = 0
         for images, _ in dataloader:
+            print(f'batch_idx {bs_idx}')
             images = images.to(self.device)
             embeddings = gcam.forward(images)
             embeddings = embeddings.view(embeddings.size()[0],-1).cpu().data.numpy()
@@ -151,6 +155,7 @@ class TestStatisticBackprop:
             attributions = gcam.generate()
             attributions = attributions.squeeze().cpu().data.numpy()
             attributions_list.append(attributions)
+            bs_idx += 1
         return np.vstack(attributions_list), np.vstack(embed_list) 
     
     def save_embeddings(self, embed_X, embed_Y):
@@ -210,16 +215,16 @@ class TestStatisticBackprop:
 parser = argparse.ArgumentParser(description='Visualizing Two-Sample Test Retina')
 # Model parameters
 parser.add_argument('--model', type=str, default='simclr', choices=('simclr','bsimclr','imgnet'))
-parser.add_argument('--exp', type=int, default=103)
+parser.add_argument('--exp', type=int, default=108)
 parser.add_argument('--pre_exp', type=int, default=2, help='The experiment id for pretraining.')
 parser.add_argument('--bs', type=int, default=16)  
 # Model parameters
 parser.add_argument('--latent_dim', type=int, default=2048, help='latent vector size of encoder')
-parser.add_argument('--target_layer', type=str, default='7.2.conv3', choices=('7.2.conv1', '7.2.conv2', '7.2.conv3', '7.1.conv1', '7.1.conv2', '7.1.conv3', '7.0.conv1', '7.1.conv1','7.2.conv1')) 
+parser.add_argument('--target_layer', type=str, default='7.2.conv1', choices=('7.2.conv1', '7.2.conv2', '7.2.conv3', '7.1.conv1', '7.1.conv2', '7.1.conv3', '7.0.conv1', '7.1.conv1','7.2.conv1')) 
 parser.add_argument('--backprop_type', type=str, default='test_statistic', choices= ('test_statistic','latent_dim'))
 parser.add_argument('--latent_dim_idx', type=int, default=None)
 parser.add_argument('--save_embed', type=bool, default=True)
-parser.add_argument('--groups', nargs='+', type=int, default=[1], choices=[1,2,3,4], help='List of group names')
+parser.add_argument('--groups', nargs='+', type=int, default=[1,2,3,4], choices=[1,2,3,4], help='List of group names')
 
 # Heatmap visualizations
 parser.add_argument('--relu', type=bool, default=True, help='If we apply relu on heatmaps in GradCAM!')               
