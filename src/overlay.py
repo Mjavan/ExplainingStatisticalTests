@@ -159,8 +159,8 @@ class HeatmapOverlay:
         
                
 parser = argparse.ArgumentParser(description='Overlaying HeatMaps')
-parser.add_argument('--exp', type=int, default=11, help='ID of the current experiment!')
-parser.add_argument('--gr', type=str, default='X', help='The group that we want to visualise')
+parser.add_argument('--exp', type=int, default=103, help='ID of the current experiment!')
+parser.add_argument('--gr', type=str, default='Y', help='The group that we want to visualise')
 parser.add_argument('--img_idx', type=int, default=0, help='The index of image that we want to overlay heatmap on!')
 parser.add_argument('--batch_size', type=int, default=16, help='Batch size for processing images') 
 parser.add_argument('--alpha', type=float, default=0.4, help='The factor used to blend the Grad-CAM heatmap with the original image')

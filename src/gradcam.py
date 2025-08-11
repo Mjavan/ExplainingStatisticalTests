@@ -100,6 +100,7 @@ class GradCAM(ProbBase):
         #print(f'alpha:{self.alpha.shape}')
         
         # gcam: torch.Size([1, 128, 1, 16, 16]), torch.float32
+        # gcam size: [1, 16, 1, 7, 7] => for Retina, torch.float32
         # in original paper we have ReLU, but we dot have it here
         # L_{gcam}^{c} = ReLU(sum_{a_{k}A_{k}})
         # New val: 
@@ -110,8 +111,9 @@ class GradCAM(ProbBase):
         gcam = gcam.squeeze(dim=0)
         #print(f'\ngcam size:{gcam.size()}')
         # Upsample gcam to the size of image: [128, 1, 64, 64]
+        # Upsample gcam to the size of image:  [16, 1, 224, 224] => for Retnia
         gcam = F.interpolate(gcam, (self.image_size, self.image_size), mode="bilinear")
-        #print(f'\nsize of heatmap after upsampling:{gcam.size()}')
+        # print(f'\nsize of heatmap after upsampling:{gcam.size()}')
         # gcam size: [128, 1, 64, 64]
         # applying relue to produce features that positively impact test statistic
         if self.relu:

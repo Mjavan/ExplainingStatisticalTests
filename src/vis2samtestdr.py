@@ -99,21 +99,65 @@ class TestStatisticBackprop:
         self.encoder.eval()
         return self.encoder
     
-    def _get_mean_embeddings(self,gcam, dataloader):
+    def _get_embeddings(self,gcam, dataloader):
         """Takes dataloader of each group, extract embedding vectors, return mean embeddings"""
         # Initialize accumulators for healthy and unhealthy groups
-        sum_f = torch.zeros_like(torch.zeros(self.args.latent_dim)).to(self.device)  
-        count_f = 0 # Count of samples in each group
+        embed_list = [] # save embeddings as numpy array
         for images, _ in dataloader:
             images = images.to(self.device)
             embeddings = gcam.forward(images)
-            embeddings = embeddings.view(embeddings.size()[0],-1)
-            sum_f += embeddings.sum(dim=0)  # Sum of embeddings for this batch
-            count_f += embeddings.size(0) 
-        mean_embed = sum_f / count_f if count_f > 0 else torch.zeros_like(sum_f) 
-        del sum_f
+            embeddings = embeddings.view(embeddings.size()[0],-1).cpu().detach().numpy()
+            embed_list.append(embeddings)
         torch.cuda.empty_cache()
-        return mean_embed
+        embed_list = np.vstack(embed_list)
+        print(f'embed_list shape: {embed_list.shape}')
+        return embed_list
+    
+    def _get_heatmaps_batch(self, gcam, embed_gr1, embed_gr2, dataloader, gr=1):
+        """Extract embeddings in batches from the dataloader.
+           dataloader: DataLoader for the group to be processed.
+           embed_gr1: Embeddings of group 1.
+           embed_gr2: Embeddings of group 2.
+           gr: Group name to be processed."""
+        heatmaps1, heatmaps2 = [], []
+        N1 = embed_gr1.shape[0]
+        N2 = embed_gr2.shape[0]
+        # calculate sum of each group embeddings
+        pre_embed_group1_sum = embed_gr1.sum(axis=0, keepdim=True)
+        pre_embed_group2_sum = embed_gr2.sum(axis=0, keepdim=True)
+        for i, (imgs, _) in enumerate(dataloader):
+            imgs = imgs.to(device)
+            embed_new = gcam.forward(imgs).view(imgs.size(0), -1)
+            start = i * imgs.size(0)
+            end = start + imgs.size(0)
+            batch_old = emb_gr1[start:end].to(device)
+            # Update the sum of embeddings for group 1
+            batch_new = gcam.forward(imgs).view(imgs.size(0), -1)
+            if gr == 1:
+                pre_embed_group1_sum_new = pre_embed_group1_sum - \
+                batch_old.sum(dim=0, keepdim=True) + batch_new.sum(dim=0, keepdim=True)
+                mean_new1 = pre_embed_group1_sum_new / N1
+                mean2 = pre_embed_group2_sum / N2
+                S = torch.norm(mu1_new - mu2, p=2)
+                gcam.backward(S)
+                # Generate heatmaps
+                heatmaps = gcam.generate().squeeze(1).detach().cpu().numpy()
+                # Concatenate heatmaps
+                heatmap_all = np.concat((heatmaps1, heatmaps), axis=0)
+            # Update the sum of embeddings for group 2
+            elif gr == 2:
+                pre_embed_group2_sum_new = pre_embed_group2_sum - \
+                batch_old.sum(dim=0, keepdim=True) + batch_new.sum(dim=0, keepdim=True)
+                mean_new2 = pre_embed_group2_sum_new / N2
+                mean1 = pre_embed_group1_sum / N1
+                S = torch.norm(mean1 - mean_new2, p=2)
+                gcam.backward(S)
+                # Generate heatmaps
+                heatmaps = gcam.generate().squeeze(1).detach().cpu().numpy()
+                # Concatenate heatmaps
+                heatmap_all = np.concat((heatmaps2, heatmaps), axis=0)
+        return heatmap_all
+                
                     
     def calculate_test_statistics(self, model):
         """Calculate the test statistic for different groups of DR."""
@@ -124,48 +168,36 @@ class TestStatisticBackprop:
         # Instantiate GradCAM for feature attribution
         gcam = GradCAM(model, target_layer=target_layer, relu=self.args.relu, device=self.device)
         # Calculate mean embeddings
-        healthy_mean = self._get_mean_embeddings(gcam, self.healthy_loader)
-        unhealthy_mean = self._get_mean_embeddings(gcam, self.unhealthy_loader)
-        D = healthy_mean - unhealthy_mean
-        print(f'healthy_mean:{healthy_mean.shape}')
-        print(f'unhealthy_mean:{unhealthy_mean.shape}')
-        healthy_mean_np = healthy_mean.detach().cpu().numpy()
-        unhealthy_mean_np = unhealthy_mean.detach().cpu().numpy()
+        healthy_embed = np.array(self._get_embeddings(gcam, self.healthy_loader))
+        unhealthy_embed = np.array(self._get_embeddings(gcam, self.unhealthy_loader))
+        # Calculate mean vectors for each group
+        healthy_mean_np = np.mean(healthy_embed, axis=0)
+        unhealthy_mean_np = np.mean(unhealthy_embed, axis=0)
+        # Calculate heatmaps for each group 
+        heatmap_all_g1 = self._get_heatmaps_batch(gcam, healthy_embed,
+                                                unhealthy_embed, 
+                                                dataloader=self.healthy_loader,
+                                                gr=1)
+        heatmap_all_g2 = self._get_heatmaps_batch(gcam, healthy_embed,
+                                                unhealthy_embed, 
+                                                dataloader=self.unhealthy_loader,
+                                                gr=2)
         mmd_nr = MMDTest(healthy_mean_np, unhealthy_mean_np)
         #p_val = mmd_nr._compute_p_value()
         #print(f'MMD p-value: {p_val:0.5f}')
         test_statistic = torch.norm(D, p=2)
         print(f'MMD test-statistic: {test_statistic:0.5f}')
-        return(test_statistic, D, gcam)
-    
-    def process_attributions(self, dataloader, gcam, backprop_value):
-        """Process and return GradCAM attributions in batches."""
-        attributions_list = []
-        embed_list = [] # save embeddings as numpy array
-        # Compute attribution maps for each group group
-        bs_idx = 0
-        for images, _ in dataloader:
-            print(f'batch_idx {bs_idx}')
-            images = images.to(self.device)
-            embeddings = gcam.forward(images)
-            embeddings = embeddings.view(embeddings.size()[0],-1).cpu().data.numpy()
-            embed_list.append(embeddings)
-            del embeddings
-            gcam.backward(backprop_value)
-            attributions = gcam.generate()
-            attributions = attributions.squeeze().cpu().data.numpy()
-            attributions_list.append(attributions)
-            bs_idx += 1
-        return np.vstack(attributions_list), np.vstack(embed_list) 
+        return(heatmap_all_g1,heatmap_all_g2,healthy_embed,unhealthy_embed)
+     
     
     def save_embeddings(self, embed_X, embed_Y):
         n,m = self.sample_size.get('healthy_size', 100), self.sample_size.get('unhealthy_size', 100)
-        file_path = os.path.join(self.embed_dir, f'{self.seed}_{self.args.pre_exp}_{self.args.model}_{n+m}')
+        file_path = os.path.join(self.embed_dir, 
+                                 f'{self.seed}_{self.args.pre_exp}_{self.args.model}_{self.args.groups}_{n}_{m}')
         os.makedirs(file_path, exist_ok=True)
-        
         path_X = os.path.join(file_path,'healthy_embed.npy')
         path_Y = os.path.join(file_path ,'unhealthy_embed.npy')
-        
+            
         if not os.path.exists(path_X) or not os.path.exists(path_Y):
             np.save(path_X, embed_X)
             np.save(path_Y, embed_Y)
@@ -203,8 +235,7 @@ class TestStatisticBackprop:
         else:
             raise ValueError("Invalid backpropagation type. Choose 'test_statistic' or 'latent_dim'.")
         
-        attr_healthy, embed_X = self.process_attributions(self.healthy_loader, gcam, backprop_value)
-        attr_unhealthy, embed_Y = self.process_attributions(self.unhealthy_loader, gcam, backprop_value) 
+        attr_healthy, attr_unhealthy, embed_X, embed_Y = self.calculate_test_statistics(model) 
         
         self.save_attributions(attr_healthy, attr_unhealthy,latent_dim_idx)
         
@@ -215,7 +246,7 @@ class TestStatisticBackprop:
 parser = argparse.ArgumentParser(description='Visualizing Two-Sample Test Retina')
 # Model parameters
 parser.add_argument('--model', type=str, default='simclr', choices=('simclr','bsimclr','imgnet'))
-parser.add_argument('--exp', type=int, default=108)
+parser.add_argument('--exp', type=int, default=1000)
 parser.add_argument('--pre_exp', type=int, default=2, help='The experiment id for pretraining.')
 parser.add_argument('--bs', type=int, default=16)  
 # Model parameters
@@ -223,8 +254,8 @@ parser.add_argument('--latent_dim', type=int, default=2048, help='latent vector 
 parser.add_argument('--target_layer', type=str, default='7.2.conv1', choices=('7.2.conv1', '7.2.conv2', '7.2.conv3', '7.1.conv1', '7.1.conv2', '7.1.conv3', '7.0.conv1', '7.1.conv1','7.2.conv1')) 
 parser.add_argument('--backprop_type', type=str, default='test_statistic', choices= ('test_statistic','latent_dim'))
 parser.add_argument('--latent_dim_idx', type=int, default=None)
-parser.add_argument('--save_embed', type=bool, default=True)
-parser.add_argument('--groups', nargs='+', type=int, default=[1,2,3,4], choices=[1,2,3,4], help='List of group names')
+parser.add_argument('--save_embed', type=bool, default=False)
+parser.add_argument('--groups', nargs='+', type=int, default=[2], choices=[1,2,3,4], help='List of group names')
 
 # Heatmap visualizations
 parser.add_argument('--relu', type=bool, default=True, help='If we apply relu on heatmaps in GradCAM!')               

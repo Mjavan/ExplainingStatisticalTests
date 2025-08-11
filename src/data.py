@@ -54,7 +54,7 @@ class DiabeticRetinopathy(Dataset):
 def stratified_sampledataset(dataset: DiabeticRetinopathy,
                             healthy_size: int, 
                             unhealthy_size: int,
-                            groups: Optional[List[int]] = None, 
+                            groups: Optional[List[int]] = None, # groups show the unhealthy classes, e.g. [1,2,3,4] or [2]
                             rnd_st: int = 42) -> Tuple[pd.DataFrame, pd.DataFrame]:
     # Separate healthy samples (class 0)
     healthy_samples = dataset.labels[dataset.labels['level'] == 0]
@@ -64,6 +64,16 @@ def stratified_sampledataset(dataset: DiabeticRetinopathy,
     unhealthy_samples = dataset.labels[dataset.labels['level'].isin(groups)]
     unhealthy_labels = unhealthy_samples['level'].unique()
     print(f"Unhealthy labels: {unhealthy_labels}")
+
+    # Check if there are enough unhealthy samples
+    total_available_unhealthy = len(unhealthy_samples)
+    if total_available_unhealthy == 0:
+        raise ValueError("No samples found for the specified unhealthy groups.")
+    
+    # If requested size is too large, adjust it
+    if total_available_unhealthy < unhealthy_size:
+        print(f"⚠️ Only {total_available_unhealthy} unhealthy samples available; reducing sample size to match.")
+        unhealthy_size = total_available_unhealthy
     
     # Determine total counts for stratified sampling
     total_unhealthy = unhealthy_samples['level'].value_counts()
@@ -145,7 +155,7 @@ def get_groups(config: dict = config, groups: Optional[List] = None) -> Tuple[Sa
 # check if the script is run directly
 if __name__ == "__main__":
     # Example usage
-    healthy_ds, unhealthy_ds = get_groups(groups=[2])
+    healthy_ds, unhealthy_ds = get_groups(groups=[4])
     print(f"Healthy dataset size: {len(healthy_ds)}")
     print(f"Unhealthy dataset size: {len(unhealthy_ds)}")
     
